@@ -25,6 +25,15 @@ started to enjoy, as well as my simulation skills. So I don't recommend
 using this project for commercial purposes (at least not yet),
 because I'm still learning.
 
+## Examples
+
+See `examples/`. Execution example:
+
+```
+$ cd examples/expograo
+$ go run main.go
+```
+
 ## Overview
 
 **sim** uses concepts present in other simulation software, like Arena:
