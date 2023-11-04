@@ -82,6 +82,13 @@ type Truck struct {
     Load        float64
 }
 
+type Train struct {
+    sim.EntityBase
+    CommodityId string
+    TerminalId  string
+    Load        float64
+}
+
 type Ship struct {
     sim.EntityBase
     CommodityId string
@@ -157,6 +164,7 @@ type Global struct {
     Commodities     map[string]*Commodity
     Terminals       map[string]*Terminal
     Harbors         map[string]*Harbor
+    RailSections    map[string]map[string]float64
     TruckCapacity   float64
 }
 
@@ -427,6 +435,76 @@ func ReadData() {
         g.Harbors[hid] = harbor
     }
     
+    // Load railway segments
+    //--------------------------
+    file, err = os.Open("data/segmentos-RMS.tsv")
+    Check(err)
+    defer file.Close()
+
+    reader = csv.NewReader(file)
+    reader.Comma = '\t'
+    records, err = reader.ReadAll()
+    Check(err)
+    
+    for _, row := range records[1:len(records)] {
+        a, ok := g.RailSections[row[0]]
+        if !ok {
+            a = make(map[string]float64)
+            g.RailSections[row[0]] = a
+        }
+        
+        a[row[1]], _ = strconv.ParseFloat(row[2], 64)
+        
+        b, ok := g.RailSections[row[1]]
+        if !ok {
+            b = make(map[string]float64)
+            g.RailSections[row[1]] = b
+        }
+        
+        b[row[0]], _ = strconv.ParseFloat(row[2], 64)
+    }
+    
+    //pretty.Println(g.RailSections)
+    
+    for id1, _ := range g.RailSections {
+        for id2, _ := range g.RailSections {
+            g.Env.AddResource(&sim.ResourceBase{Id: fmt.Sprintf("RSC %s %s", id1, id2), Amount: 1})
+            g.Env.AddResource(&sim.ResourceBase{Id: fmt.Sprintf("RSC %s %s", id2, id1), Amount: 1})
+        
+            g.Env.AddProcess(
+                sim.ProcessBase{
+                    Id: fmt.Sprintf("TVL %s %s", id1, id2),
+                    Group: "TVL",
+                    Needs: map[string]float64{
+                        fmt.Sprintf("RSC %s %s", id1, id2): 1,
+                        fmt.Sprintf("RSC %s %s", id2, id1): 1,
+                    },
+                    RNG: sim.NewRNGTriangular(1, 5, 3),
+                },
+            )
+            
+            g.Env.AddProcess(
+                sim.ProcessBase{
+                    Id: fmt.Sprintf("TVL %s %s", id2, id1),
+                    Group: "TVL",
+                    Needs: map[string]float64{
+                        fmt.Sprintf("RSC %s %s", id1, id2): 1,
+                        fmt.Sprintf("RSC %s %s", id2, id1): 1,
+                    },
+                    RNG: sim.NewRNGTriangular(1, 5, 3),
+                },
+            )
+        }
+    }
+    
+    train := &Train{
+        TerminalId: "",
+        CommodityId: "",
+        Load: g.TruckCapacity,
+    }
+    
+    _ = train
+    
     ReadHarborCommodityProductivity("Corn", "data/harbor-corn-cap.tsv")
     ReadHarborCommodityProductivity("Soy", "data/harbor-soy-cap.tsv")
     
@@ -495,6 +573,7 @@ func main() {
     g.Commodities = make(map[string]*Commodity)
     g.Terminals = make(map[string]*Terminal)
     g.Harbors = make(map[string]*Harbor)
+    g.RailSections = make(map[string]map[string]float64)
     g.TruckCapacity = 30
     
     g.Env = sim.NewEnvironment()
@@ -558,7 +637,8 @@ func main() {
     g.Env.EndDate = 30*Days
     
     g.Env.Run()
-    g.Env.PrintProcessStatistics()
+    //g.Env.PrintProcessStatistics()
+    g.Env.PrintProcessGroupStatistics("")
     
     fmt.Println()
     PrintExports()

@@ -278,7 +278,7 @@ func (res *ResourceBase) Enqueue(entity Entity) {
 }
 
 func (res *ResourceBase) Dequeue() {
-    res.Queue = slices.Delete(res.Queue, 0, 1)
+    res.Queue = res.Queue[1:]
     res.TotalEntitiesOut++
 }
 
@@ -292,6 +292,7 @@ func (res *ResourceBase) SetAmount(amount float64) {
 
 type ProcessBase struct {
     Id          string
+    Group       string
     Needs       map[string]float64
     Queue       []Entity
     RNG         RNG
@@ -345,7 +346,7 @@ func (process *ProcessBase) Enqueue(entity Entity) {
 func (process *ProcessBase) Dequeue() {
     entity := process.Queue[0]
     process.QueueStats.TotalTimeInQueue += entity.GetTimeInQueue()
-    process.Queue = slices.Delete(process.Queue, 0, 1)
+    process.Queue = process.Queue[1:]
     process.QueueStats.TotalEntitiesOut++
     process.QueueStats.AvgTimeInQueue = process.QueueStats.TotalTimeInQueue / float64(process.QueueStats.TotalEntitiesIn)
 }
@@ -446,6 +447,7 @@ type Environment struct {
     Resources       map[string]Resource // map of strings because persistent
     Entities        map[int]Entity // map of int because constantly deleting
     Processes       []Process // array because needs sorting
+    WatchedProcesses map[string]Process // array because needs sorting
     OngoingProcesses []OngoingProcess // array because needs sorting
     NextEntityId    int
     Now             float64 // seconds
@@ -468,13 +470,13 @@ func (env *Environment) SetLogLevel(level int) {
     env.LogLevel = level
 }
 
-func (env *Environment) GetHumanTime() string {
-    days := env.Now / 60 / 60 / 24
+func GetHumanTime(s float64) string {
+    days := s / 60 / 60 / 24
     hours := (days - math.Floor(days)) * 24
     minutes := (hours - math.Floor(hours)) * 60
     seconds := (minutes - math.Floor(minutes)) * 60
     
-    return fmt.Sprintf("%.0fd %02.0f:%02.0f:%07.4f", math.Floor(days), math.Floor(hours), math.Floor(minutes), seconds)
+    return fmt.Sprintf("%.0fd %02.0f:%02.0f:%05.2f", math.Floor(days), math.Floor(hours), math.Floor(minutes), seconds)
 }
 
 func (env *Environment) Enqueue(entity Entity, process Process) {
@@ -485,6 +487,8 @@ func (env *Environment) Enqueue(entity Entity, process Process) {
     
     process.Enqueue(entity)
     entity.EnterQueue(QueueType_Process, process.GetId(), env.Now)
+    
+    env.WatchedProcesses[process.GetId()] = process
 }
 
 func (env *Environment) GetProcess(pid string) Process {
@@ -539,6 +543,10 @@ func (env *Environment) MaybeStartProcess(process Process) {
             env.Printf[2]("[PROCESS STARTED] %s | %s\n", process.GetId(), entity.GetName())
             entity.LeaveQueue(QueueType_Process, process.GetId(), env.Now)
             env.StartProcess(process, entity, env.Now + process.GetDuration(entity))
+            
+            if process.GetQueueSize() == 0 {
+                env.WatchedProcesses[process.GetId()] = nil
+            }
         } else {
             break
         }
@@ -572,9 +580,10 @@ func (env *Environment) Run() {
     lastBarRefresh := time.Now()
     
     env.Printf[1]("[STARTING SIMULATION]\n")
+    env.Printf[1]("[MAX TIME] %s\n", GetHumanTime(env.EndDate))
     
     for env.Now < env.EndDate {
-        env.Printf[2](AC_Green(AC_Bold("[SIMULATION CLOCK] %s (%.2fs)\n")), env.GetHumanTime(), env.Now)
+        env.Printf[2](AC_Green(AC_Bold("[SIMULATION CLOCK] %s (%.2fs)\n")), GetHumanTime(env.Now), env.Now)
         
         for s := 0; s < len(env.EntitySources); {
             source := env.EntitySources[s]
@@ -619,8 +628,7 @@ func (env *Environment) Run() {
                 }
                 
                 entity.ReleaseResources()
-                
-                env.OngoingProcesses = slices.Delete(env.OngoingProcesses, 0, 1)
+                env.OngoingProcesses = env.OngoingProcesses[1:]
                 
                 if ongoing.Process.GetProcessBase().Forward != nil {
                     ongoing.Process.GetProcessBase().Forward(entity)
@@ -632,9 +640,17 @@ func (env *Environment) Run() {
             }
             
             // start processes that can be started
-            for _, process := range env.Processes {
+            for _, process := range env.WatchedProcesses {
                 env.MaybeStartProcess(process)
             }
+            
+            for key, process := range env.WatchedProcesses {
+                if process == nil {
+                    delete(env.WatchedProcesses, key)
+                }
+            }
+            
+            //fmt.Println(env.WatchedProcesses)
             
             sort.Sort(ByDateEnd(env.OngoingProcesses))
             sort.Sort(ByNextGen(env.EntitySources))
@@ -655,7 +671,7 @@ func (env *Environment) Run() {
         if env.StepThrough {
             WaitForEnter()
         } else if (env.LogLevel == 1) {
-            if time.Since(lastBarRefresh).Seconds() >= 1.0/24.0 {
+            if time.Since(lastBarRefresh).Seconds() >= 1.0/15.0 {
                 lastBarRefresh = time.Now()
                 progress := env.Now / env.EndDate
                 progressBarMax := 40
@@ -676,15 +692,27 @@ func (env *Environment) Run() {
     
     env.Printf[1]("\n")
     env.Printf[1]("[SIMULATION ENDED]\n")
-    env.Printf[1]("[STATISTICS]\n")
-    env.Printf[1]("Run time   %.2fs\n", time.Since(runStart).Seconds())
+    env.Printf[1]("[RUN TIME] %.2fs\n", time.Since(runStart).Seconds())
     
     env.Printf[1]("\n")
 }
 
+func (env *Environment) PrintProcessGroupStatistics(groupId string) {
+    fmt.Printf("[PROCESS STATISTICS] Group: %s\n", groupId)
+    
+    fmt.Printf("%24s%16s%16s%16s\n", "Process", "Entities In", "Entities Out", "Avg Q Time (s)")
+        
+    for _, process := range env.Processes {
+        if process.GetProcessBase().Group == groupId {
+            st := process.GetStatistics()
+            fmt.Printf("%24.24s%16d%16d%16.2f\n", process.GetId(), st.TotalEntitiesIn, st.TotalEntitiesOut, st.AvgTimeInQueue)
+        }
+    }
+}
+
 func (env *Environment) PrintProcessStatistics() {
     fmt.Printf("[PROCESS STATISTICS]\n")
-    fmt.Printf("%24s%16s%16s%16s\n", "Process", "Entities In", "Entities Out", "Avg Q. Time (s)")
+    fmt.Printf("%24s%16s%16s%16s\n", "Process", "Entities In", "Entities Out", "Avg Q Time (s)")
     
     for _, process := range env.Processes {
         st := process.GetStatistics()
@@ -698,6 +726,8 @@ func NewEnvironment() *Environment {
     env.EntitySources = make([]EntitySource, 0)
     env.Resources = make(map[string]Resource, 0)
     env.Processes = make([]Process, 0)
+    env.OngoingProcesses = make([]OngoingProcess, 0)
+    env.WatchedProcesses = make(map[string]Process)
     return env
 }
 
