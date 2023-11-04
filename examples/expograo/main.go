@@ -8,10 +8,13 @@ import (
     "strconv"
     "encoding/csv"
     "math"
-    "github.com/kr/pretty"
+    //"github.com/kr/pretty"
 )
 
 var NumDays [12]int = [12]int{31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31}
+var MonthName [12]string = [12]string{
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dec",
+}
 
 const (
     Minutes float64 = 60
@@ -24,7 +27,7 @@ const (
 
 type Commodity struct {
     Id              string
-    AnnualDemand    float64
+    AnnualExports    float64
 }
 
 // Terminal Activities:
@@ -36,15 +39,15 @@ type Commodity struct {
 
 type Terminal struct {
     Id                      string
-    Demand                  map[string]*[12]float64
-    AnnualDemand            map[string]float64
+    MonthExports            map[string]*[12]float64
+    AnnualExports           map[string]float64
     Sazonality              map[string]*[12]float64
     NumTrucks               map[string]*[12]int
     Storage                 float64
     ProcessingRate          float64
     
     // simulated
-    AmountIn                map[string]*[12]float64
+    Exports                 map[string]*[12]float64
 }
 
 type CommodityProductivityInHarbor struct {
@@ -122,7 +125,7 @@ func (source *TruckSource) Generate() sim.Entity {
         Load: g.TruckCapacity,
     }
     
-    terminal.AmountIn[source.CommodityId][source.Month] += truck.Load
+    terminal.Exports[source.CommodityId][source.Month] += truck.Load
     
     env.AddEntity("Truck", truck)
     env.ForwardTo(truck, fmt.Sprintf("ARR %s", source.TerminalId))
@@ -181,28 +184,28 @@ func ReadTerminalExports(commId string, filePath string) {
     for _, row := range records[1:len(records)-1] {
         tid := row[0]
         terminal := g.Terminals[tid]
-        terminal.Demand[commId] = &[12]float64{}
+        terminal.MonthExports[commId] = &[12]float64{}
         terminal.Sazonality[commId] = &[12]float64{}
         terminal.NumTrucks[commId] = &[12]int{}
-        terminal.AmountIn[commId] = &[12]float64{}
-        terminal.AnnualDemand[commId] = 0
+        terminal.Exports[commId] = &[12]float64{}
+        terminal.AnnualExports[commId] = 0
         
         for mon, col := range row[1:len(row)-1] {
             value, err := strconv.ParseFloat(col, 64)
             terminal.Sazonality[commId][mon] = 0.0
-            terminal.Demand[commId][mon] = 0.0
+            terminal.MonthExports[commId][mon] = 0.0
             if err == nil {
-                terminal.Demand[commId][mon] = value*KTon
-                terminal.AnnualDemand[commId] += value*KTon
+                terminal.MonthExports[commId][mon] = value*KTon
+                terminal.AnnualExports[commId] += value*KTon
             }
         }
     }
     
     for m := 0; m < 12; m++ {
         for _, terminal := range g.Terminals {
-            for cid, _ := range terminal.Demand {
-                terminal.Sazonality[cid][m] = terminal.Demand[cid][m] / terminal.AnnualDemand[cid]
-                terminal.NumTrucks[cid][m] = int(math.Ceil((terminal.AnnualDemand[cid] * terminal.Sazonality[cid][m]) / g.TruckCapacity))
+            for cid, _ := range terminal.MonthExports {
+                terminal.Sazonality[cid][m] = terminal.MonthExports[cid][m] / terminal.AnnualExports[cid]
+                terminal.NumTrucks[cid][m] = int(math.Ceil((terminal.AnnualExports[cid] * terminal.Sazonality[cid][m]) / g.TruckCapacity))
             }
         }
     }
@@ -309,11 +312,11 @@ func ReadData() {
         
         terminal := &Terminal{
             Id: tid,
-            Demand: make(map[string]*[12]float64),
+            MonthExports: make(map[string]*[12]float64),
             Sazonality: make(map[string]*[12]float64),
             NumTrucks: make(map[string]*[12]int),
-            AmountIn: make(map[string]*[12]float64),
-            AnnualDemand: make(map[string]float64),
+            Exports: make(map[string]*[12]float64),
+            AnnualExports: make(map[string]float64),
         }
         
         terminal.Storage, _ = strconv.ParseFloat(row[1], 64)
@@ -436,6 +439,58 @@ func ReadData() {
     //pretty.Println(g.Harbors)
 }
 
+func PrintExports() {
+    // Print terminal exports
+    for cid, _ := range g.Commodities {
+        fmt.Printf("[TERMINAL EXPORTS] (%s kt)\n", cid)
+        
+        fmt.Printf("%24s", "Terminal")
+        
+        for m := 0; m < 12; m++ {
+            fmt.Printf("%9s", MonthName[m])
+        }
+        
+        fmt.Println()
+        
+        for tid, terminal := range g.Terminals {
+            fmt.Printf("%24s", tid)
+            
+            for m := 0; m < 12; m++ {
+                fmt.Printf("%9.2f", terminal.Exports[cid][m] / KTon)
+            }
+            
+            fmt.Println()
+        }
+        
+        fmt.Println()
+    }
+    
+    // Print harbor exports
+    for cid, _ := range g.Commodities {
+        fmt.Printf("[HARBOR EXPORTS] (%s kt)\n", cid)
+        
+        fmt.Printf("%24s", "Harbor")
+        
+        for m := 0; m < 12; m++ {
+            fmt.Printf("%9s", MonthName[m])
+        }
+        
+        fmt.Println()
+        
+        for hid, harbor := range g.Harbors {
+            fmt.Printf("%24s", hid)
+            
+            for m := 0; m < 12; m++ {
+                fmt.Printf("%9.2f", harbor.Exports[cid][m] / KTon)
+            }
+            
+            fmt.Println()
+        }
+        
+        fmt.Println()
+    }
+}
+
 func main() {
     g.Commodities = make(map[string]*Commodity)
     g.Terminals = make(map[string]*Terminal)
@@ -452,7 +507,7 @@ func main() {
     for m := 0; m < 12; m++ {
         for tid, terminal := range g.Terminals {
             for cid, _ := range g.Commodities {
-                if terminal.Demand[cid][m] > 0.0 {
+                if terminal.MonthExports[cid][m] > 0.0 {
                     interval := float64(NumDays[m])*Days / float64(terminal.NumTrucks[cid][m])
                     sid := fmt.Sprintf("%s:%s:%d", tid, cid, m+1)
                     
@@ -498,24 +553,15 @@ func main() {
         day += NumDays[m]
     }
     
-    g.Env.StepThrough = false
     g.Env.LogLevel = 1
+    g.Env.StepThrough = false
     g.Env.EndDate = 30*Days
     
     g.Env.Run()
     g.Env.PrintProcessStatistics()
     
-    /*
-    for _, terminal := range g.Terminals {
-        fmt.Println(terminal.Id)
-        pretty.Println(terminal.AmountIn)
-    }
-    */
-    
-    for _, harbor := range g.Harbors {
-        fmt.Println(harbor.Id)
-        pretty.Println(harbor.Exports)
-    }
+    fmt.Println()
+    PrintExports()
 }
 
 

@@ -12,8 +12,28 @@ import (
     "golang.org/x/exp/rand"
 )
 
+const (
+    AC_Reset         string = "\x1b[0m"
+    AC_CodeRed       string = "\x1b[31m"
+    AC_CodeGreen     string = "\x1b[32m"
+    AC_CodeYellow    string = "\x1b[33m"
+    AC_CodeBlue      string = "\x1b[34m"
+    AC_CodeMagenta   string = "\x1b[35m"
+    AC_CodeCyan      string = "\x1b[36m"
+    AC_CodeBold      string = "\x1b[1m"
+    AC_ResetBold     string = "\x1b[22m"
+)
+
+func AC_Red(str string) string {return AC_CodeRed + str + AC_Reset}
+func AC_Green(str string) string {return AC_CodeGreen + str + AC_Reset}
+func AC_Yellow(str string) string {return AC_CodeYellow + str + AC_Reset}
+func AC_Blue(str string) string {return AC_CodeBlue + str + AC_Reset}
+func AC_Magenta(str string) string {return AC_CodeMagenta + str + AC_Reset}
+func AC_Cyan(str string) string {return AC_CodeCyan + str + AC_Reset}
+func AC_Bold(str string) string {return AC_CodeBold + str + AC_ResetBold}
+
 func WaitForEnter() {
-    fmt.Printf("[STEP THROUGH] Press ENTER to continue\n")
+    fmt.Printf(AC_Bold("[STEP THROUGH] Press ENTER to continue\n"))
     bufio.NewReader(os.Stdin).ReadBytes('\n')
 }
 
@@ -448,8 +468,8 @@ func (env *Environment) SetLogLevel(level int) {
     env.LogLevel = level
 }
 
-func (sss *Environment) GetHumanTime() string {
-    days := sss.Now / 60 / 60 / 24
+func (env *Environment) GetHumanTime() string {
+    days := env.Now / 60 / 60 / 24
     hours := (days - math.Floor(days)) * 24
     minutes := (hours - math.Floor(hours)) * 60
     seconds := (minutes - math.Floor(minutes)) * 60
@@ -457,18 +477,18 @@ func (sss *Environment) GetHumanTime() string {
     return fmt.Sprintf("%.0fd %02.0f:%02.0f:%07.4f", math.Floor(days), math.Floor(hours), math.Floor(minutes), seconds)
 }
 
-func (sss *Environment) Enqueue(entity Entity, process Process) {
+func (env *Environment) Enqueue(entity Entity, process Process) {
     for rid, _ := range process.GetNeeds() {
-        sss.Resources[rid].Enqueue(entity)
-        entity.EnterQueue(QueueType_Resource, rid, sss.Now)
+        env.Resources[rid].Enqueue(entity)
+        entity.EnterQueue(QueueType_Resource, rid, env.Now)
     }
     
     process.Enqueue(entity)
-    entity.EnterQueue(QueueType_Process, process.GetId(), sss.Now)
+    entity.EnterQueue(QueueType_Process, process.GetId(), env.Now)
 }
 
-func (sss *Environment) GetProcess(pid string) Process {
-    for _, process := range sss.Processes {
+func (env *Environment) GetProcess(pid string) Process {
+    for _, process := range env.Processes {
         if process.GetId() == pid {
             return process
         }
@@ -476,29 +496,29 @@ func (sss *Environment) GetProcess(pid string) Process {
     return nil
 }
 
-func (sss *Environment) ForwardTo(entity Entity, pid string) {
-    sss.Enqueue(entity, sss.GetProcess(pid))
+func (env *Environment) ForwardTo(entity Entity, pid string) {
+    env.Enqueue(entity, env.GetProcess(pid))
 }
 
-func (sss *Environment) AddResource(resource *ResourceBase) {
-    sss.Resources[resource.Id] = resource
+func (env *Environment) AddResource(resource *ResourceBase) {
+    env.Resources[resource.Id] = resource
 }
 
-func (sss *Environment) AddProcess(base ProcessBase) {
-    sss.Processes = append(sss.Processes, &base)
+func (env *Environment) AddProcess(base ProcessBase) {
+    env.Processes = append(env.Processes, &base)
 }
     
-func (sss *Environment) AddEntitySource(entitySource EntitySource) {
-    entitySource.GetEntitySourceBase().Env = sss
-    sss.EntitySources = append(sss.EntitySources, entitySource)
+func (env *Environment) AddEntitySource(entitySource EntitySource) {
+    entitySource.GetEntitySourceBase().Env = env
+    env.EntitySources = append(env.EntitySources, entitySource)
 }
 
-func (sss *Environment) AddEntity(entityType string, entity Entity) {
-    entity.Initialize(sss.NextEntityId, entityType)
-    sss.Entities[entity.GetId()] = entity
-    sss.NextEntityId++
+func (env *Environment) AddEntity(entityType string, entity Entity) {
+    entity.Initialize(env.NextEntityId, entityType)
+    env.Entities[entity.GetId()] = entity
+    env.NextEntityId++
 }
-func (sss *Environment) MaybeStartProcess(process Process) {
+func (env *Environment) MaybeStartProcess(process Process) {
     for process.GetQueueSize() > 0 {
         entity := process.GetNextInQueue()
         readyToStart := true
@@ -506,9 +526,9 @@ func (sss *Environment) MaybeStartProcess(process Process) {
         for rid, amount := range process.GetNeeds() {
             seized := entity.GetResourceAmount(rid)
             if seized < amount {
-                if sss.Resources[rid].GetAmount() >= amount {
-                    sss.Resources[rid].SetAmount(sss.Resources[rid].GetAmount() - amount)
-                    entity.SeizeResource(rid, amount, sss.Now)
+                if env.Resources[rid].GetAmount() >= amount {
+                    env.Resources[rid].SetAmount(env.Resources[rid].GetAmount() - amount)
+                    entity.SeizeResource(rid, amount, env.Now)
                 } else {
                     readyToStart = false
                 }
@@ -516,20 +536,20 @@ func (sss *Environment) MaybeStartProcess(process Process) {
         }
         
         if readyToStart {
-            sss.Printf[2]("[PROCESS STARTED] %s | %s\n", process.GetId(), entity.GetName())
-            entity.LeaveQueue(QueueType_Process, process.GetId(), sss.Now)
-            sss.StartProcess(process, entity, sss.Now + process.GetDuration(entity))
+            env.Printf[2]("[PROCESS STARTED] %s | %s\n", process.GetId(), entity.GetName())
+            entity.LeaveQueue(QueueType_Process, process.GetId(), env.Now)
+            env.StartProcess(process, entity, env.Now + process.GetDuration(entity))
         } else {
             break
         }
     }
 }
 
-func (sss *Environment) StartProcess(process Process, entity Entity, endDate float64) {
-    entity.StartProcess(sss.Now)
+func (env *Environment) StartProcess(process Process, entity Entity, endDate float64) {
+    entity.StartProcess(env.Now)
     process.Dequeue()
-    ongoing := OngoingProcess{Process: process, Entity: entity, DateStart: sss.Now, DateEnd: endDate}
-    sss.OngoingProcesses = append(sss.OngoingProcesses, ongoing)
+    ongoing := OngoingProcess{Process: process, Entity: entity, DateStart: env.Now, DateEnd: endDate}
+    env.OngoingProcesses = append(env.OngoingProcesses, ongoing)
 }
 
 func Cast[T Entity](entity Entity) T {
@@ -539,112 +559,136 @@ func Cast[T Entity](entity Entity) T {
     panic("Cast failed!")
 }
 
-func (sss *Environment) Run() {
-    if sss.StepThrough {
-        sss.LogLevel = 2
+func (env *Environment) Run() {
+    if env.StepThrough {
+        env.LogLevel = 2
     }
     
-    sss.SetLogLevel(sss.LogLevel)
-    sort.Sort(ByNextGen(sss.EntitySources))
-    sss.Now = sss.EntitySources[0].GetNextGen()
+    env.SetLogLevel(env.LogLevel)
+    sort.Sort(ByNextGen(env.EntitySources))
+    env.Now = env.EntitySources[0].GetNextGen()
     
-    sss.Printf[1]("[STARTING SIMULATION]\n")
+    runStart := time.Now()
+    lastBarRefresh := time.Now()
     
-    for sss.Now < sss.EndDate {
-        sss.Printf[2]("[SIMULATION CLOCK] %s (%.2fs)\n", sss.GetHumanTime(), sss.Now)
+    env.Printf[1]("[STARTING SIMULATION]\n")
+    
+    for env.Now < env.EndDate {
+        env.Printf[2](AC_Green(AC_Bold("[SIMULATION CLOCK] %s (%.2fs)\n")), env.GetHumanTime(), env.Now)
         
-        for s := 0; s < len(sss.EntitySources); {
-            source := sss.EntitySources[s]
+        for s := 0; s < len(env.EntitySources); {
+            source := env.EntitySources[s]
             
-            if source.GetNextGen() > sss.Now {
+            if source.GetNextGen() > env.Now {
                 break
             }
             
             for e := 0; e < source.GetBatchSize(); e++ {
                 entity := source.Generate()
-                sss.Printf[2]("[NEW ENTITY] %s | %s\n", source.GetId(), entity.GetName())
+                env.Printf[2]("[NEW ENTITY] %s | %s\n", source.GetId(), entity.GetName())
                 _ = entity
             }
             
             source.Update()
             
             if source.GetGenerations() == source.GetMaxGenerations() {
-                sss.EntitySources = slices.Delete(sss.EntitySources, s, s+1)
+                env.EntitySources = slices.Delete(env.EntitySources, s, s+1)
             } else {
                 s++
             }
         }
         
-        nextTime := sss.Now
+        nextTime := env.Now
         
-        for nextTime == sss.Now {
-            for len(sss.OngoingProcesses) > 0 {
-                ongoing := sss.OngoingProcesses[0]
+        for nextTime == env.Now {
+            for len(env.OngoingProcesses) > 0 {
+                ongoing := env.OngoingProcesses[0]
                 
-                if ongoing.DateEnd > sss.Now {
+                if ongoing.DateEnd > env.Now {
                     break
                 }
                 
                 entity := ongoing.Entity
                 process := ongoing.Process
                 
-                entity.EndProcess(sss.Now)
-                sss.Printf[2]("[PROCESS ENDED] %s | %s\n", process.GetId(), entity.GetName())
+                entity.EndProcess(env.Now)
+                env.Printf[2]("[PROCESS ENDED] %s | %s\n", process.GetId(), entity.GetName())
                 
                 for rid, amount := range process.GetNeeds() {
-                    sss.Resources[rid].SetAmount(sss.Resources[rid].GetAmount() + amount)
+                    env.Resources[rid].SetAmount(env.Resources[rid].GetAmount() + amount)
                 }
                 
                 entity.ReleaseResources()
                 
-                sss.OngoingProcesses = slices.Delete(sss.OngoingProcesses, 0, 1)
+                env.OngoingProcesses = slices.Delete(env.OngoingProcesses, 0, 1)
                 
                 if ongoing.Process.GetProcessBase().Forward != nil {
                     ongoing.Process.GetProcessBase().Forward(entity)
                 } else if ongoing.Process.GetProcessBase().NextProcess != "" {
-                    sss.ForwardTo(entity, ongoing.Process.GetProcessBase().NextProcess)
+                    env.ForwardTo(entity, ongoing.Process.GetProcessBase().NextProcess)
                 } else {
                     // dispose
                 }
             }
             
             // start processes that can be started
-            for _, process := range sss.Processes {
-                sss.MaybeStartProcess(process)
+            for _, process := range env.Processes {
+                env.MaybeStartProcess(process)
             }
             
-            sort.Sort(ByDateEnd(sss.OngoingProcesses))
-            sort.Sort(ByNextGen(sss.EntitySources))
+            sort.Sort(ByDateEnd(env.OngoingProcesses))
+            sort.Sort(ByNextGen(env.EntitySources))
             
             // Update simulation clock
-            nextTime = sss.EndDate
-            if len(sss.EntitySources) > 0 {
-                nextTime = min(nextTime, sss.EntitySources[0].GetNextGen())
+            nextTime = env.EndDate
+            if len(env.EntitySources) > 0 {
+                nextTime = min(nextTime, env.EntitySources[0].GetNextGen())
             }
             
-            if len(sss.OngoingProcesses) > 0 {
-                nextTime = min(nextTime, sss.OngoingProcesses[0].DateEnd)
+            if len(env.OngoingProcesses) > 0 {
+                nextTime = min(nextTime, env.OngoingProcesses[0].DateEnd)
             }
         }
         
-        sss.Now = nextTime
+        env.Now = nextTime
         
-        if sss.StepThrough {
+        if env.StepThrough {
             WaitForEnter()
+        } else if (env.LogLevel == 1) {
+            if time.Since(lastBarRefresh).Seconds() >= 1.0/24.0 {
+                lastBarRefresh = time.Now()
+                progress := env.Now / env.EndDate
+                progressBarMax := 40
+                
+                fmt.Printf("\033[%dD[", progressBarMax+2)
+                
+                progressBarSize := int(math.Ceil(progress * float64(progressBarMax)))
+                
+                for c := 0; c < progressBarSize; c++ {
+                    env.Printf[1]("\u25A0")
+                }
+                env.Printf[1]("%.*s]", progressBarMax - progressBarSize, "                                            ")
+            }
         } else {
-            sss.Printf[2]("\n")
+            env.Printf[2]("\n")
         }
     }
     
-    sss.Printf[1]("[SIMULATION ENDED]\n")
+    env.Printf[1]("\n")
+    env.Printf[1]("[SIMULATION ENDED]\n")
+    env.Printf[1]("[STATISTICS]\n")
+    env.Printf[1]("Run time   %.2fs\n", time.Since(runStart).Seconds())
+    
+    env.Printf[1]("\n")
 }
 
 func (env *Environment) PrintProcessStatistics() {
-    fmt.Printf("%24s%16s%16s%16s%16s\n", "Process", "Entities In", "Entities Out", "Total Q. Time", "Avg Q. Time")
+    fmt.Printf("[PROCESS STATISTICS]\n")
+    fmt.Printf("%24s%16s%16s%16s\n", "Process", "Entities In", "Entities Out", "Avg Q. Time (s)")
     
     for _, process := range env.Processes {
         st := process.GetStatistics()
-        fmt.Printf("%24.24s%16d%16d%16.2f%16.2f\n", process.GetId(), st.TotalEntitiesIn, st.TotalEntitiesOut, st.TotalTimeInQueue, st.AvgTimeInQueue)
+        fmt.Printf("%24.24s%16d%16d%16.2f\n", process.GetId(), st.TotalEntitiesIn, st.TotalEntitiesOut, st.AvgTimeInQueue)
     }
 }
 
