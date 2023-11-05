@@ -8,6 +8,9 @@ import (
     "strconv"
     "encoding/csv"
     "math"
+    "strings"
+    "slices"
+    "github.com/RyanCarrier/dijkstra"
     //"github.com/kr/pretty"
 )
 
@@ -87,6 +90,7 @@ type Train struct {
     CommodityId string
     TerminalId  string
     Load        float64
+    TravelPlan    []string
 }
 
 type Ship struct {
@@ -106,6 +110,19 @@ func ForwardToClassification(entity sim.Entity) {
     env := entity.GetEnvironment()
     truck := sim.Cast[*Truck](entity)
     env.ForwardTo(truck, fmt.Sprintf("CLA %s", truck.TerminalId))
+}
+
+func ForwardToNextStation(entity sim.Entity) {
+    env := entity.GetEnvironment()
+    train := sim.Cast[*Train](entity)
+    
+    if len(train.TravelPlan) > 0 {
+        nextRailSection := train.TravelPlan[0]
+        train.TravelPlan = train.TravelPlan[1:]
+        env.ForwardTo(train, fmt.Sprintf(nextRailSection))
+    } else {
+        fmt.Println("Finished")
+    }
 }
 
 type TruckSource struct {
@@ -165,6 +182,7 @@ type Global struct {
     Terminals       map[string]*Terminal
     Harbors         map[string]*Harbor
     RailSections    map[string]map[string]float64
+    TravelPlans     map[string]map[string][]string
     TruckCapacity   float64
 }
 
@@ -447,63 +465,132 @@ func ReadData() {
     Check(err)
     
     for _, row := range records[1:len(records)] {
-        a, ok := g.RailSections[row[0]]
+        p1 := strings.Split(row[0], ",")[0]
+        p2 := strings.Split(row[1], ",")[0]
+        
+        a, ok := g.RailSections[p1]
         if !ok {
             a = make(map[string]float64)
-            g.RailSections[row[0]] = a
+            g.RailSections[p1] = a
         }
         
-        a[row[1]], _ = strconv.ParseFloat(row[2], 64)
+        a[p2], _ = strconv.ParseFloat(row[2], 64)
         
-        b, ok := g.RailSections[row[1]]
+        b, ok := g.RailSections[p2]
         if !ok {
             b = make(map[string]float64)
-            g.RailSections[row[1]] = b
+            g.RailSections[p2] = b
         }
         
-        b[row[0]], _ = strconv.ParseFloat(row[2], 64)
+        b[p1], _ = strconv.ParseFloat(row[2], 64)
     }
     
     //pretty.Println(g.RailSections)
     
     for id1, _ := range g.RailSections {
         for id2, _ := range g.RailSections {
-            g.Env.AddResource(&sim.ResourceBase{Id: fmt.Sprintf("RSC %s %s", id1, id2), Amount: 1})
-            g.Env.AddResource(&sim.ResourceBase{Id: fmt.Sprintf("RSC %s %s", id2, id1), Amount: 1})
+            g.Env.AddResource(&sim.ResourceBase{Id: fmt.Sprintf("RAIL %s %s", id1, id2), Amount: 1})
+            g.Env.AddResource(&sim.ResourceBase{Id: fmt.Sprintf("RAIL %s %s", id2, id1), Amount: 1})
         
             g.Env.AddProcess(
                 sim.ProcessBase{
-                    Id: fmt.Sprintf("TVL %s %s", id1, id2),
-                    Group: "TVL",
+                    Id: fmt.Sprintf("TRAV %s %s", id1, id2),
+                    Group: "TRAV",
                     Needs: map[string]float64{
-                        fmt.Sprintf("RSC %s %s", id1, id2): 1,
-                        fmt.Sprintf("RSC %s %s", id2, id1): 1,
+                        fmt.Sprintf("RAIL %s %s", id1, id2): 1,
+                        fmt.Sprintf("RAIL %s %s", id2, id1): 1,
                     },
                     RNG: sim.NewRNGTriangular(1, 5, 3),
+                    Forward: ForwardToNextStation,
                 },
             )
             
             g.Env.AddProcess(
                 sim.ProcessBase{
-                    Id: fmt.Sprintf("TVL %s %s", id2, id1),
-                    Group: "TVL",
+                    Id: fmt.Sprintf("TRAV %s %s", id2, id1),
+                    Group: "TRAV",
                     Needs: map[string]float64{
-                        fmt.Sprintf("RSC %s %s", id1, id2): 1,
-                        fmt.Sprintf("RSC %s %s", id2, id1): 1,
+                        fmt.Sprintf("RAIL %s %s", id1, id2): 1,
+                        fmt.Sprintf("RAIL %s %s", id2, id1): 1,
                     },
                     RNG: sim.NewRNGTriangular(1, 5, 3),
+                    Forward: ForwardToNextStation,
                 },
             )
         }
     }
     
-    train := &Train{
-        TerminalId: "",
-        CommodityId: "",
-        Load: g.TruckCapacity,
+    
+    // Calculate shortest paths
+    //-------------------------------
+    graph := dijkstra.NewGraph()
+    stations := []string{}
+    
+    GetIndex := func(id string) int {
+        for i, _ := range stations {
+            if id == stations[i] {
+                return i
+            }
+        }
+        return -1
     }
     
-    _ = train
+    for id, _ := range g.RailSections {
+        graph.AddVertex(len(stations))
+        stations = append(stations, id)
+    }
+    
+    for i, id1 := range stations {
+        for id2, _ := range g.RailSections[id1] {
+            j := GetIndex(id2)
+            graph.AddArc(i, j, int64(g.RailSections[id1][id2] * 1000))
+        }
+    }
+    
+    origins := []string{"Londrina", "Marialva", "Maringá"}
+    destinations := []string{"Paranaguá", "Rio Grande", "São Francisco"}
+    
+    for _, origin := range origins {
+        g.TravelPlans[origin] = map[string][]string{}
+        
+        for _, destination := range destinations {
+            path1, _ := graph.Shortest(GetIndex(origin), GetIndex(destination))
+            path2, _ := graph.Shortest(GetIndex(destination), GetIndex(origin))
+            
+            travelPlan := []string{}
+            
+            for i := 0; i < len(path1.Path)-1; i++ {
+                travelPlan = append(travelPlan, fmt.Sprintf("TRAV %s %s", stations[path1.Path[i]], stations[path1.Path[i+1]]))
+            }
+            
+            g.TravelPlans[origin][destination] = travelPlan
+            
+            travelPlan = []string{}
+            
+            for i := 0; i < len(path2.Path)-1; i++ {
+                travelPlan = append(travelPlan, fmt.Sprintf("TRAV %s %s", stations[path2.Path[i]], stations[path2.Path[i+1]]))
+            }
+            
+            _, ok := g.TravelPlans[destination]
+            if !ok {
+                g.TravelPlans[destination] = map[string][]string{}
+            }
+            
+            g.TravelPlans[destination][origin] = travelPlan
+        }
+    }
+    
+    if false {
+        train := &Train{
+            TerminalId: "",
+            CommodityId: "",
+            Load: g.TruckCapacity,
+            TravelPlan: slices.Clone(g.TravelPlans["Londrina"]["Paranaguá"]),
+        }
+        
+        g.Env.AddEntity("Train", train)
+        ForwardToNextStation(train)
+    }
     
     ReadHarborCommodityProductivity("Corn", "data/harbor-corn-cap.tsv")
     ReadHarborCommodityProductivity("Soy", "data/harbor-soy-cap.tsv")
@@ -574,6 +661,7 @@ func main() {
     g.Terminals = make(map[string]*Terminal)
     g.Harbors = make(map[string]*Harbor)
     g.RailSections = make(map[string]map[string]float64)
+    g.TravelPlans = make(map[string]map[string][]string)
     g.TruckCapacity = 30
     
     g.Env = sim.NewEnvironment()
@@ -633,11 +721,10 @@ func main() {
     }
     
     g.Env.LogLevel = 1
-    g.Env.StepThrough = false
+    g.Env.StepThrough = true
     g.Env.EndDate = 30*Days
     
     g.Env.Run()
-    //g.Env.PrintProcessStatistics()
     g.Env.PrintProcessGroupStatistics("")
     
     fmt.Println()

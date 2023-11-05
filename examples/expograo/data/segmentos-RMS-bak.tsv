@@ -5,7 +5,7 @@ Cachoeira Bom Jesus (LCH), km 12,769	Almirante Tamandare (LTD), km 20,268	7.499
 Almirante Tamandare (LTD), km 20,268	Tranqueira (LTR), km 27,649	7.381
 Tranqueira (LTR), km 27,649	Itaperussu (LIP), km 35,446	7.797
 Itaperussu (LIP), km 35,446	Rio Branco do Sul (LBR), km 43,309	7.863
-Paranaguá	km 5 (LID), km 6,634	4.324
+D Pedro II (LDP), km 2,310	km 5 (LID), km 6,634	4.324
 km 5 (LID), km 6,634	Alexandra (LAX), km 16,168	9.534
 Alexandra (LAX), km 16,168	Saquarema (LSQ), km 23,989	7.821
 Saquarema (LSQ), km 23,989	Morretes (LMR), km 40,756	16.767
@@ -53,7 +53,7 @@ Lavrinha (LLV), km 29,049	Rio da Várzea (LVZ), km 39,280	10.231
 Rio da Várzea (LVZ), km 39,280	Parada Diretor (LDR), km 50,280	11.000
 Parada Diretor (LDR), km 50,280	Rio Negro (LRO), km 61,350	11.070
 Rio Negro (LRO), km 61,350	Mafra (LRI), km 62,500	1.150
-São Francisco	Araguari (LAY), km 23,057	23.057
+São Francisco do Sul (LFC), km 0,000	Araguari (LAY), km 23,057	23.057
 Araguari (LAY), km 23,057	Joinville (LJL), km 40,369	17.312
 Joinville (LJL), km 40,369	Guaramirim (LBA), km 66,928	26.559
 Guaramirim (LBA), km 66,928	Jaraguá do Sul (LJG), km 77,321	10.393
@@ -93,7 +93,7 @@ Joaquim Tavora (LGD), km 133,363	Platina (LPI), km 166,061	32.698
 Platina (LPI), km 166,061	Jacarezinho (LJZ), km 190,265	24.204
 Jacarezinho (LJZ), km 190,265	Marques dos Reis (LMQ), km 209,339	19.074
 Jaguariaíva (LJR), km 0,000	Fábrica Pisa (L03), km 6,000	6.419
-Maringá	Posto km 543 (L04), km 543,000	3.012
+Maringa (LMG), km 540,000	Posto km 543 (L04), km 543,000	3.012
 Morretes (LMR), km 0,000	Antonina (LAT), km 15,698	15.698
 Joaquim Murtinho (LMU), km 0,000	Castelar de Carvalho (LCD), km 18,174	18.174
 Castelar de Carvalho (LCD), km 18,174	Romário Martins (LMT), km 39,028	20.854
@@ -188,7 +188,7 @@ Pelotas (NPT), km 420,950	Povo Novo (NVN), km 440,576	19.626
 Povo Novo (NVN), km 440,576	Quinta (NQT), km 457,550	16.974
 Quinta (NQT), km 457,550	Quarta Seção (NQS), km 472,050	14.500
 Quarta Seção (NQS), km 472,050	Gare do Porto (NRH), km 480,570	8.519
-Gare do Porto (NRH), km 480,570	Rio Grande	1.620
+Gare do Porto (NRH), km 480,570	Rio Grande (NRG), km 482,190	1.620
 Cachoeira do Sul (NCH), km 203,000	Porto de Cachoeira do Sul (N03), km 209,000	6.000
 Cacequi (NCY), km 0,000	Retiro (NRE), km 17,510	17.510
 Retiro (NRE), km 17,510	Três Divisas (NTD), km 41,723	24.213
@@ -336,8 +336,8 @@ Congonhas (LGH), km 143,046	Urai (LUR), km 153,864	10.818
 Urai (LUR), km 153,864	Jataizinho (LJY), km 184,160	30.296
 Jataizinho (LJY), km 184,160	Ibipora (LIR), km 195,193	11.033
 Ibipora (LIR), km 195,193	Eng. Francisco Cruz (LLL), km 205,285	10.092
-Eng. Francisco Cruz (LLL), km 205,285	Londrina	11.750
-Londrina	Cambe (LND), km 224,175	7.140
+Eng. Francisco Cruz (LLL), km 205,285	Londrina (LLD), km 217,035	11.750
+Londrina (LLD), km 217,035	Cambe (LND), km 224,175	7.140
 Cambe (LND), km 224,175	Rolandia (LRL), km 230,950	8.360
 Rolandia (LRL), km 230,950	Arapongas (LAG), km 253,555	21.020
 Arapongas (LAG), km 253,555	Aricanduva (LCV), km 259,600	6.045
@@ -346,12 +346,12 @@ Apucarana (LAP), km 268,582	Pirapo (LPR), km 276,240	7.658
 Pirapo (LPR), km 276,240	Cambira (LAI), km 282,790	6.550
 Cambira (LAI), km 282,790	Jandaia do Sul (LJD), km 288,200	5.409
 Jandaia do Sul (LJD), km 288,200	Mandaguari (LMI), km 294,060	5.860
-Mandaguari (LMI), km 294,060	Marialva	15.247
-Marialva	Sarandi (LSD), km 320,720	11.413
+Mandaguari (LMI), km 294,060	Marialva (LMA), km 309,307	15.247
+Marialva (LMA), km 309,307	Sarandi (LSD), km 320,720	11.413
 Sarandi (LSD), km 320,720	Eng. Vicente Montanha (LMN), km 327,780	7.060
 Eng. Vicente Montanha (LMN), km 327,780	Posto Rob (LRX), km 336,780	9.000
-Posto Rob (LRX), km 336,780	Maringá	4.099
-Maringá	Paissandu (LPD), km 346,690	5.810
+Posto Rob (LRX), km 336,780	Maringa (LMG), km 340,879	4.099
+Maringa (LMG), km 340,879	Paissandu (LPD), km 346,690	5.810
 Paissandu (LPD), km 346,690	Água Boa (LAU), km 361,650	14.960
 Água Boa (LAU), km 361,650	Dr.Camargo (LDC), km 372,684	11.034
 Dr.Camargo (LDC), km 372,684	Jussara (LJU), km 404,868	32.184

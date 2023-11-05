@@ -519,9 +519,11 @@ func (env *Environment) AddEntitySource(entitySource EntitySource) {
 
 func (env *Environment) AddEntity(entityType string, entity Entity) {
     entity.Initialize(env.NextEntityId, entityType)
+    entity.GetEntityBase().Environment = env
     env.Entities[entity.GetId()] = entity
     env.NextEntityId++
 }
+
 func (env *Environment) MaybeStartProcess(process Process) {
     for process.GetQueueSize() > 0 {
         entity := process.GetNextInQueue()
