@@ -3,10 +3,19 @@ module github.com/nidoro/sim
 go 1.21.0
 
 require (
-	github.com/RyanCarrier/dijkstra v1.3.0 // indirect
-	github.com/kr/pretty v0.3.1 // indirect
-	github.com/kr/text v0.2.0 // indirect
-	github.com/rogpeppe/go-internal v1.9.0 // indirect
-	golang.org/x/exp v0.0.0-20231006140011-7918f672742d // indirect
-	gonum.org/v1/gonum v0.14.0 // indirect
+	github.com/RyanCarrier/dijkstra v1.3.0
+	github.com/hajimehoshi/ebiten/v2 v2.6.3
+	golang.org/x/exp v0.0.0-20231006140011-7918f672742d
+	golang.org/x/image v0.14.0
+	gonum.org/v1/gonum v0.14.0
+)
+
+require (
+	github.com/ebitengine/purego v0.5.0 // indirect
+	github.com/jezek/xgb v1.1.0 // indirect
+	golang.org/x/exp/shiny v0.0.0-20230817173708-d852ddb80c63 // indirect
+	golang.org/x/mobile v0.0.0-20230922142353-e2f452493d57 // indirect
+	golang.org/x/sync v0.3.0 // indirect
+	golang.org/x/sys v0.13.0 // indirect
+	golang.org/x/text v0.14.0 // indirect
 )

@@ -8,6 +8,7 @@ import (
     "strconv"
     "encoding/csv"
     "math"
+    "math/rand"
     "strings"
     "slices"
     "github.com/RyanCarrier/dijkstra"
@@ -89,6 +90,9 @@ type Train struct {
     sim.EntityBase
     CommodityId string
     TerminalId  string
+    HarborId    string
+    Direction   string
+    Capacity    float64
     Load        float64
     TravelPlan    []string
 }
@@ -120,9 +124,44 @@ func ForwardToNextStation(entity sim.Entity) {
         nextRailSection := train.TravelPlan[0]
         train.TravelPlan = train.TravelPlan[1:]
         env.ForwardTo(train, fmt.Sprintf(nextRailSection))
-    } else {
-        fmt.Println("Finished")
+    } else if train.Direction == "import" {
+        env.ForwardTo(train, fmt.Sprintf("LDTR %s", train.TerminalId))
+    } else if train.Direction == "export" {
+        env.ForwardTo(train, fmt.Sprintf("UNTR %s %s", train.HarborId, "Corn"))
     }
+}
+
+func ForwardToSomeHarbor(entity sim.Entity) {
+    train := sim.Cast[*Train](entity)
+    env := train.GetEnvironment()
+    train.Load = train.Capacity
+    terminal := g.Terminals[train.TerminalId]
+    terminal.Exports[train.CommodityId][env.GetCurrentMonth()] += train.Load
+    
+    train.Direction = "export"
+    
+    harborOptions := []string{"Paranaguá", "São Francisco", "Rio Grande"}
+    train.HarborId = harborOptions[rand.Intn(len(harborOptions))]
+    
+    train.HarborId = train.HarborId
+    train.TravelPlan = slices.Clone(g.TravelPlans[train.TerminalId][train.HarborId])
+    ForwardToNextStation(train)
+}
+
+func ForwardToSomeTerminal(entity sim.Entity) {
+    train := sim.Cast[*Train](entity)
+    env := entity.GetEnvironment()
+    harbor := g.Harbors[train.HarborId]
+    harbor.Exports[train.CommodityId][env.GetCurrentMonth()] += train.Load
+    
+    train.Direction = "import"
+    
+    terminalOptions := []string{"Londrina", "Marialva", "Maringá", "Cascavel", "Cruz Alta", "J.Castilhos", "Cacequi"}
+    train.TerminalId = terminalOptions[rand.Intn(len(terminalOptions))]
+    
+    train.Load = 0
+    train.TravelPlan = slices.Clone(g.TravelPlans[train.HarborId][train.TerminalId])
+    ForwardToNextStation(train)
 }
 
 type TruckSource struct {
@@ -141,18 +180,14 @@ type ShipSource struct {
 
 func (source *TruckSource) Generate() sim.Entity {
     env := source.GetEnvironment()
-    terminal := g.Terminals[source.TerminalId]
-    
     truck := &Truck{
         TerminalId: source.TerminalId,
         CommodityId: source.CommodityId,
         Load: g.TruckCapacity,
     }
     
-    terminal.Exports[source.CommodityId][source.Month] += truck.Load
-    
     env.AddEntity("Truck", truck)
-    env.ForwardTo(truck, fmt.Sprintf("ARR %s", source.TerminalId))
+    env.ForwardTo(truck, fmt.Sprintf("ARRI %s", source.TerminalId))
     
     return truck
 }
@@ -167,11 +202,11 @@ func (source *ShipSource) Generate() sim.Entity {
         DWT: harbor.Productivity[source.CommodityId].DWT,
     }
     
-    DWTOptions := []float64{50*KTon, 60*KTon, 70*KTon}
-    harbor.Exports[source.CommodityId][source.Month] += DWTOptions[int(harbor.ShipDWTRNG.Next())]
+    //DWTOptions := []float64{50*KTon, 60*KTon, 70*KTon}
+    //harbor.Exports[source.CommodityId][source.Month] += DWTOptions[int(harbor.ShipDWTRNG.Next())]
     
     env.AddEntity("Ship", ship)
-    env.ForwardTo(ship, fmt.Sprintf("DCK %s %s", source.CommodityId, source.HarborId))
+    env.ForwardTo(ship, fmt.Sprintf("DOCK %s %s", source.CommodityId, source.HarborId))
     
     return ship
 }
@@ -308,14 +343,37 @@ func ReadHarborCommodityProductivity(cid string, filePath string) {
         
         resources := math.Ceil((prod.DWT / prod.Productivity) / Days)+2
         
-        g.Env.AddResource(&sim.ResourceBase{Id: fmt.Sprintf("DCK %s", hid), Amount: resources})
+        // Ship processes
+        //-----------------------
+        g.Env.AddResource(&sim.ResourceBase{Id: fmt.Sprintf("DOCK %s", hid), Amount: resources})
         g.Env.AddProcess(
             sim.ProcessBase{
-                Id: fmt.Sprintf("DCK %s %s", cid, hid),
+                Id: fmt.Sprintf("DOCK %s %s", cid, hid),
+                Groups: []string{"DOCK", hid},
                 Needs: map[string]float64{
-                    fmt.Sprintf("DCK %s", hid): 1,
+                    fmt.Sprintf("DOCK %s", hid): 1,
                 },
                 RNG: sim.NewRNGTriangular(prod.DockingTime*0.95, prod.DockingTime*1.05, prod.DockingTime),
+            },
+        )
+        
+        // Train processes
+        //------------------------
+        g.Env.AddResource(&sim.ResourceBase{Id: fmt.Sprintf("UNTR %s", hid), Amount: resources})
+        g.Env.AddProcess(
+            sim.ProcessBase{
+                Id: fmt.Sprintf("UNTR %s %s", hid, cid),
+                Groups: []string{"UNTR", hid},
+                Needs: map[string]float64{
+                    fmt.Sprintf("UNTR %s", hid): 1,
+                },
+                RNG: sim.NewRNGTriangular(1, 1.1, 1),
+                DelayFunc: func (process *sim.ProcessBase, entity sim.Entity) float64 {
+                    train := sim.Cast[*Train](entity)
+                    delay := (train.Load / prod.Productivity)
+                    return delay
+                },
+                Forward: ForwardToSomeTerminal,
             },
         )
     }
@@ -354,62 +412,84 @@ func ReadData() {
         trucksPerMinuteCap := math.Ceil(terminal.ProcessingRate / 30 / 30 / 24 / 60)
         resources := trucksPerMinuteCap+1
         
-        g.Env.AddResource(&sim.ResourceBase{Id: fmt.Sprintf("ARR %s", tid), Amount: resources})
+        // Truck processes
+        //------------------------
+        g.Env.AddResource(&sim.ResourceBase{Id: fmt.Sprintf("ARRI %s", tid), Amount: resources})
         g.Env.AddProcess(
             sim.ProcessBase{
-                Id: fmt.Sprintf("ARR %s", tid),
+                Id: fmt.Sprintf("ARRI %s", tid),
+                Groups: []string{"ARRI", tid},
                 Needs: map[string]float64{
-                    fmt.Sprintf("ARR %s", tid): 1,
+                    fmt.Sprintf("ARRI %s", tid): 1,
                 },
                 RNG: sim.NewRNGNormal(1.2*Minutes, 0.1*Minutes),
-                NextProcess: fmt.Sprintf("REC %s", tid),
+                NextProcess: fmt.Sprintf("RECP %s", tid),
             },
         )
         
-        g.Env.AddResource(&sim.ResourceBase{Id: fmt.Sprintf("REC %s", tid), Amount: resources})
+        g.Env.AddResource(&sim.ResourceBase{Id: fmt.Sprintf("RECP %s", tid), Amount: resources})
         g.Env.AddProcess(
             sim.ProcessBase{
-                Id: fmt.Sprintf("REC %s", tid),
+                Id: fmt.Sprintf("RECP %s", tid),
+                Groups: []string{"RECP", tid},
                 Needs: map[string]float64{
-                    fmt.Sprintf("REC %s", tid): 1,
+                    fmt.Sprintf("RECP %s", tid): 1,
                 },
                 RNG: sim.NewRNGLogNormal(1.9*Minutes, 0.7*Minutes),
-                NextProcess: fmt.Sprintf("CLA %s", tid),
+                NextProcess: fmt.Sprintf("CLAS %s", tid),
             },
         )
         
-        g.Env.AddResource(&sim.ResourceBase{Id: fmt.Sprintf("CLA %s", tid), Amount: resources})
+        g.Env.AddResource(&sim.ResourceBase{Id: fmt.Sprintf("CLAS %s", tid), Amount: resources})
         g.Env.AddProcess(
             sim.ProcessBase{
-                Id: fmt.Sprintf("CLA %s", tid),
+                Id: fmt.Sprintf("CLAS %s", tid),
+                Groups: []string{"CLAS", tid},
                 Needs: map[string]float64{
-                    fmt.Sprintf("CLA %s", tid): 1,
+                    fmt.Sprintf("CLAS %s", tid): 1,
                 },
                 RNG: sim.NewRNGTriangular(1*Minutes, 5*Minutes, 3*Minutes),
-                NextProcess: fmt.Sprintf("UNL %s", tid),
+                NextProcess: fmt.Sprintf("UNTK %s", tid),
             },
         )
         
-        g.Env.AddResource(&sim.ResourceBase{Id: fmt.Sprintf("UNL %s", tid), Amount: resources})
+        g.Env.AddResource(&sim.ResourceBase{Id: fmt.Sprintf("UNTK %s", tid), Amount: resources})
         g.Env.AddProcess(
             sim.ProcessBase{
-                Id: fmt.Sprintf("UNL %s", tid),
+                Id: fmt.Sprintf("UNTK %s", tid),
+                Groups: []string{"UNTK", tid},
                 Needs: map[string]float64{
-                    fmt.Sprintf("UNL %s", tid): 1,
+                    fmt.Sprintf("UNTK %s", tid): 1,
                 },
                 RNG: sim.NewRNGLogNormal(4.3*Minutes, 0.6*Minutes),
-                NextProcess: fmt.Sprintf("EXI %s", tid),
+                NextProcess: fmt.Sprintf("EXTK %s", tid),
             },
         )
         
-        g.Env.AddResource(&sim.ResourceBase{Id: fmt.Sprintf("EXI %s", tid), Amount: resources})
+        g.Env.AddResource(&sim.ResourceBase{Id: fmt.Sprintf("EXTK %s", tid), Amount: resources})
         g.Env.AddProcess(
             sim.ProcessBase{
-                Id: fmt.Sprintf("EXI %s", tid),
+                Id: fmt.Sprintf("EXTK %s", tid),
+                Groups: []string{"EXTK", tid},
                 Needs: map[string]float64{
-                    fmt.Sprintf("EXI %s", tid): 1,
+                    fmt.Sprintf("EXTK %s", tid): 1,
                 },
                 RNG: sim.NewRNGNormal(1.2*Minutes, 0.1*Minutes),
+            },
+        )
+        
+        // Train processes
+        //------------------------
+        g.Env.AddResource(&sim.ResourceBase{Id: fmt.Sprintf("LDTR %s", tid), Amount: 1})
+        g.Env.AddProcess(
+            sim.ProcessBase{
+                Id: fmt.Sprintf("LDTR %s", tid),
+                Groups: []string{"LDTR", tid},
+                Needs: map[string]float64{
+                    fmt.Sprintf("LDTR %s", tid): 1,
+                },
+                RNG: sim.NewRNGNormal(1.2*Minutes, 0.1*Minutes),
+                Forward: ForwardToSomeHarbor,
             },
         )
         
@@ -491,16 +571,16 @@ func ReadData() {
         for id2, _ := range g.RailSections {
             g.Env.AddResource(&sim.ResourceBase{Id: fmt.Sprintf("RAIL %s %s", id1, id2), Amount: 1})
             g.Env.AddResource(&sim.ResourceBase{Id: fmt.Sprintf("RAIL %s %s", id2, id1), Amount: 1})
-        
+            
             g.Env.AddProcess(
                 sim.ProcessBase{
                     Id: fmt.Sprintf("TRAV %s %s", id1, id2),
-                    Group: "TRAV",
+                    Groups: []string{"TRAV"},
                     Needs: map[string]float64{
                         fmt.Sprintf("RAIL %s %s", id1, id2): 1,
                         fmt.Sprintf("RAIL %s %s", id2, id1): 1,
                     },
-                    RNG: sim.NewRNGTriangular(1, 5, 3),
+                    RNG: sim.NewRNGTriangular(8*Minutes, 12*Minutes, 10*Minutes),
                     Forward: ForwardToNextStation,
                 },
             )
@@ -508,12 +588,12 @@ func ReadData() {
             g.Env.AddProcess(
                 sim.ProcessBase{
                     Id: fmt.Sprintf("TRAV %s %s", id2, id1),
-                    Group: "TRAV",
+                    Groups: []string{"TRAV"},
                     Needs: map[string]float64{
                         fmt.Sprintf("RAIL %s %s", id1, id2): 1,
                         fmt.Sprintf("RAIL %s %s", id2, id1): 1,
                     },
-                    RNG: sim.NewRNGTriangular(1, 5, 3),
+                    RNG: sim.NewRNGTriangular(8*Minutes, 12*Minutes, 10*Minutes),
                     Forward: ForwardToNextStation,
                 },
             )
@@ -580,12 +660,20 @@ func ReadData() {
         }
     }
     
-    if false {
+    for i := 0; i < 10; i++ {
+        harborOptions := []string{"Paranaguá", "São Francisco", "Rio Grande"}
+        harborId := harborOptions[rand.Intn(len(harborOptions))]
+        
+        terminalOptions := []string{"Londrina", "Marialva", "Maringá", "Cascavel", "Cruz Alta", "J.Castilhos", "Cacequi"}
+        terminalId := terminalOptions[rand.Intn(len(terminalOptions))]
+    
         train := &Train{
-            TerminalId: "",
-            CommodityId: "",
-            Load: g.TruckCapacity,
-            TravelPlan: slices.Clone(g.TravelPlans["Londrina"]["Paranaguá"]),
+            TerminalId: terminalId,
+            HarborId: harborId,
+            Capacity: 50,
+            CommodityId: "Corn",
+            TravelPlan: slices.Clone(g.TravelPlans[harborId][terminalId]),
+            Direction: "import",
         }
         
         g.Env.AddEntity("Train", train)
@@ -668,8 +756,6 @@ func main() {
     
     ReadData()
     
-    g.Env.Now = 0.0
-    
     day := 0
     for m := 0; m < 12; m++ {
         for tid, terminal := range g.Terminals {
@@ -721,11 +807,12 @@ func main() {
     }
     
     g.Env.LogLevel = 1
-    g.Env.StepThrough = true
-    g.Env.EndDate = 30*Days
+    g.Env.StepThrough = false
+    g.Env.EndDate = 1*Days
     
     g.Env.Run()
-    g.Env.PrintProcessGroupStatistics("")
+    g.Env.PrintProcessesStatistics("Londrina")
+    g.Env.PrintProcessesStatistics("Paranaguá")
     
     fmt.Println()
     PrintExports()
